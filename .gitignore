@@ -3,7 +3,7 @@ dist
 dist-electron
 release
 .next
-# website-data
+website-data
 *.tsbuildinfo
 *.log
 .env

@@ -1,15 +1,14 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { NextRequest, NextResponse } from 'next/server';
-import { bearerToken, dbPath, readMeta, verifyPassword } from '../cloud-auth';
+import { bearerToken, databaseExists, readDatabase, readMeta, verifyPassword } from '../cloud-auth';
 
 export const runtime = 'nodejs';
 
 const round = (v: number) => Number((Number(v || 0)).toFixed(2));
 const today = () => new Date().toISOString().slice(0, 10);
 
-/** Load sql.js database from file */
-async function openDb(filePath: string) {
+/** Load sql.js database from an uploaded SQLite snapshot */
+async function openDb(bytes: Buffer) {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const initSqlJs = require('sql.js');
   // Use the public folder for the wasm file since Vercel strips binary files
@@ -18,8 +17,7 @@ async function openDb(filePath: string) {
     locateFile: (file: string) =>
       path.join(process.cwd(), 'public', file),
   });
-  const buf = fs.readFileSync(filePath);
-  return new SQL.Database(buf);
+  return new SQL.Database(bytes);
 }
 
 type Row = Record<string, unknown>;
@@ -340,22 +338,31 @@ function mapLoanAccountForWeb(db: any, account: Row, book: ReportBook): Row {
 // ─── Main Handler ─────────────────────────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
-  const meta = readMeta();
-  const password = bearerToken(request.headers.get('authorization'));
-
-  if (!meta.passwordHash)
-    return NextResponse.json({ error: 'Sync from the desktop app first.' }, { status: 401 });
-  if (!password || !verifyPassword(password, meta))
-    return NextResponse.json({ error: 'Invalid website password.' }, { status: 401 });
-  if (!fs.existsSync(dbPath))
-    return NextResponse.json({ error: 'No database synced yet.' }, { status: 404 });
-
-  const { searchParams } = request.nextUrl;
-  const book = searchParams.get('book') || 'Combined';
-
-  let db: any = null;
   try {
-    db = await openDb(dbPath);
+    const meta = await readMeta();
+    const password = bearerToken(request.headers.get('authorization'));
+
+    if (!meta.passwordHash) {
+      const hasDatabase = await databaseExists();
+      return NextResponse.json({
+        error: hasDatabase
+          ? 'The database exists in cloud storage, but the website access key metadata is missing. Generate a new access key, paste it into the desktop app, and sync again.'
+          : 'Generate an access key, paste it into the desktop app, then sync from the desktop app first.'
+      }, { status: 401 });
+    }
+    if (!password || !verifyPassword(password, meta))
+      return NextResponse.json({ error: 'Invalid website password.' }, { status: 401 });
+
+    const databaseBytes = await readDatabase();
+    if (!databaseBytes)
+      return NextResponse.json({ error: 'No database synced yet.' }, { status: 404 });
+
+    const { searchParams } = request.nextUrl;
+    const book = searchParams.get('book') || 'Combined';
+
+    let db: any = null;
+    try {
+      db = await openDb(databaseBytes);
 
     const company = tableExists(db, 'company')
       ? (one(db, 'SELECT * FROM company ORDER BY id LIMIT 1') ?? null)
@@ -470,7 +477,7 @@ export async function GET(request: NextRequest) {
     // Vouchers (filtered by book)
     const vouchers = listVouchers(db, book, 300);
 
-    // Lending (Lacha/Packa)
+    // Lending (Kacha/Packa)
     const lending = tableExists(db, 'loan_accounts') ? lendingSummary(db, book) : [];
 
     // Loan accounts with their transactions (filtered by book)
@@ -514,10 +521,11 @@ export async function GET(request: NextRequest) {
       loanAccounts,
       records,
     });
+    } finally {
+      db?.close();
+    }
   } catch (error: any) {
     console.error('[/api/data]', error);
     return NextResponse.json({ error: error.message || 'Internal error.' }, { status: 500 });
-  } finally {
-    db?.close();
   }
 }

@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 type Row = Record<string, unknown>;
 type Tab = 'dashboard' | 'trial-balance' | 'profit-loss' | 'balance-sheet' | 'journal' | 'ledgers' | 'lending';
 type ReportBook = 'Combined' | 'K' | 'P';
-type SetupStatus = { hasKey: boolean; companyName?: string | null; uploadedAt?: string | null };
+type SetupStatus = { hasKey: boolean; companyName?: string | null; uploadedAt?: string | null; storage?: 'blob' | 'local' };
 
 interface CloudData {
   company: Row | null;
@@ -76,7 +76,16 @@ export default function CloudDashboard() {
   const [book, setBook] = useState<ReportBook>('Combined');
 
   useEffect(() => {
-    fetch('/api/setup').then(r => r.json()).then(setSetup).catch(() => setSetup({ hasKey: false }));
+    fetch('/api/setup')
+      .then(async (res) => {
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.error || 'Setup check failed.');
+        setSetup(body);
+      })
+      .catch((setupError: any) => {
+        setSetup({ hasKey: false });
+        setError(setupError.message || 'Setup check failed.');
+      });
   }, []);
 
   const generateKey = async () => {
@@ -236,7 +245,7 @@ function Dashboard({
     { id: 'balance-sheet', label: 'Balance Sheet', icon: '🏦' },
     { id: 'journal', label: 'Journal / Daybook', icon: '📒' },
     { id: 'ledgers', label: 'Ledger Accounts', icon: '📋' },
-    { id: 'lending', label: 'Lacha / Packa', icon: '💰' },
+    { id: 'lending', label: 'Kacha / Packa', icon: '💰' },
   ];
 
   const visibleTabs = tabs.map((item) => item.id === 'lending' ? { ...item, label: 'Kacha / Packa' } : item);
@@ -338,7 +347,7 @@ function DashboardView({ data, setTab, book }: { data: CloudData; setTab: (t: Ta
       </div>
 
       <div className="section-header">
-        <h3>Recent Journal Entries ({book === 'Combined' ? 'Combined Books' : book === 'K' ? 'Lacha (Khacha)' : 'Packa Book'})</h3>
+        <h3>Recent Journal Entries ({book === 'Combined' ? 'Combined Books' : book === 'K' ? 'Kacha (Khacha)' : 'Packa Book'})</h3>
         <button className="link-btn" onClick={() => setTab('journal')}>View all →</button>
       </div>
       <div className="table-wrap">
@@ -899,7 +908,7 @@ function LedgerStatement({ ledger, onBack }: { ledger: Row & { statement: Row[] 
   );
 }
 
-// ─── Lending (Lacha / Packa) ──────────────────────────────────────────────────
+// ─── Lending (Kacha / Packa) ──────────────────────────────────────────────────
 function OldLedgerStatement({ ledger, onBack }: { ledger: Row & { statement: Row[] }; onBack: () => void }) {
   const allRows = ledger.statement as Row[];
   const openingRow = allRows[0] as Row | undefined;
@@ -1011,7 +1020,7 @@ function LendingView({ lending, loanAccounts, book }: { lending: Row[]; loanAcco
         </div>
         {details && (
           <div className="ledger-summary">
-            <div className="ledger-summary-item"><span>K (Lacha) Balance</span><strong className={Number(details.kBalance) >= 0 ? 'dr' : 'cr'}>{rupee(Math.abs(Number(details.kBalance)))} {Number(details.kBalance) >= 0 ? 'Dr' : 'Cr'}</strong></div>
+            <div className="ledger-summary-item"><span>K (Kacha) Balance</span><strong className={Number(details.kBalance) >= 0 ? 'dr' : 'cr'}>{rupee(Math.abs(Number(details.kBalance)))} {Number(details.kBalance) >= 0 ? 'Dr' : 'Cr'}</strong></div>
             <div className="ledger-summary-item"><span>P (Packa) Balance</span><strong className={Number(details.pBalance) >= 0 ? 'dr' : 'cr'}>{rupee(Math.abs(Number(details.pBalance)))} {Number(details.pBalance) >= 0 ? 'Dr' : 'Cr'}</strong></div>
             <div className="ledger-summary-item"><span>Accrued Interest</span><strong className="accent">{rupee(details.interest)}</strong></div>
             <div className="ledger-summary-item"><span>Net Balance</span><strong className={Number(details.netBalance) >= 0 ? 'dr' : 'cr'}>{rupee(Math.abs(Number(details.netBalance)))} {Number(details.netBalance) >= 0 ? 'Dr' : 'Cr'}</strong></div>
@@ -1025,12 +1034,12 @@ function LendingView({ lending, loanAccounts, book }: { lending: Row[]; loanAcco
   return (
     <div className="view-stack">
       <div className="view-toolbar">
-        <h3>Lacha / Packa (Lending) Summary</h3>
+        <h3>Kacha / Packa (Lending) Summary</h3>
         <input className="search" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search account…" />
       </div>
 
       <div className="lending-totals">
-        <div className="lending-total-card"><span>Total K (Lacha)</span><strong className="dr">{rupee(totalK)}</strong></div>
+        <div className="lending-total-card"><span>Total K (Kacha)</span><strong className="dr">{rupee(totalK)}</strong></div>
         <div className="lending-total-card"><span>Total P (Packa)</span><strong className="dr">{rupee(totalP)}</strong></div>
         <div className="lending-total-card"><span>Accrued Interest</span><strong className="accent">{rupee(totalInterest)}</strong></div>
         <div className="lending-total-card highlight"><span>Grand Total</span><strong className="dr">{rupee(totalNet)}</strong></div>
@@ -1039,7 +1048,7 @@ function LendingView({ lending, loanAccounts, book }: { lending: Row[]; loanAcco
       <div className="table-wrap">
         <table>
           <thead>
-            <tr><th>Account Name</th><th>Category</th><th>Phone</th><th className="num">K (Lacha)</th><th className="num">P (Packa)</th><th className="num">Interest</th><th className="num">Net Balance</th><th /></tr>
+            <tr><th>Account Name</th><th>Category</th><th>Phone</th><th className="num">K (Kacha)</th><th className="num">P (Packa)</th><th className="num">Interest</th><th className="num">Net Balance</th><th /></tr>
           </thead>
           <tbody>
             {filtered.map((r, i) => {
